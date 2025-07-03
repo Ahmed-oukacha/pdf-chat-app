@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="fr" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discuter avec un PDF via Gemini</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- pdf.js from Mozilla -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js"></script>
+
+    <!-- Font and Icons -->
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8f9fa;
+        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #e5e7eb; }
+        ::-webkit-scrollbar-thumb { background: #9ca3af; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+        #pdf-upload-input-landing, #pdf-upload-input-main { display: none; }
+        .loader {
+            border: 4px solid #e5e7eb;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Style pour le conteneur des canvas */
+        #canvas-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+        }
+        #pdf-canvas, #highlight-canvas, #drawing-canvas {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        #highlight-canvas { z-index: 5; pointer-events: none; }
+        #drawing-canvas { z-index: 10; }
+        .toolbar-btn {
+            @apply p-2 rounded-md hover:bg-gray-200 transition-colors duration-200;
+        }
+        .toolbar-btn.active {
+            @apply bg-blue-100 text-blue-600;
+        }
+        #color-picker {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        #color-picker::-webkit-color-swatch-wrapper { padding: 0; }
+        #color-picker::-webkit-color-swatch { border: 2px solid #e5e7eb; border-radius: 50%; }
+        #drop-zone {
+            border: 2px dashed #d1d5db;
+        }
+        #drop-zone.dragover {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <!-- ===== Page d'Accueil (Landing Page) ===== -->
+    <div id="landing-page" class="min-h-screen bg-white flex flex-col">
+        <header class="p-4 flex justify-between items-center border-b">
+            <h1 class="text-2xl font-bold text-blue-600">PDF-AI</h1>
+            <a href="#faq" class="text-gray-600 font-semibold hover:text-blue-600">FAQ</a>
+        </header>
+        <main class="flex-grow flex flex-col items-center justify-center text-center p-6">
+            <h2 class="text-5xl font-extrabold text-gray-800 mb-4">Discutez avec n'importe quel PDF !</h2>
+            <p class="text-xl text-gray-500 max-w-2xl mb-8">Plongez au cœur de vos recherches en quelques secondes. Chargez simplement un document et posez n'importe quelle question.</p>
+            
+            <div id="drop-zone" class="bg-gray-50 p-10 rounded-lg w-full max-w-lg transition">
+                <i class="fas fa-file-pdf text-5xl text-gray-400 mb-4"></i>
+                <p class="text-gray-600 mb-4">Cliquez pour charger ou glissez-déposez votre PDF ici</p>
+                <label for="pdf-upload-input-landing" class="cursor-pointer bg-blue-500 text-white font-bold px-8 py-3 rounded-full text-base hover:bg-blue-600 transition shadow-lg">
+                    Charger un PDF
+                </label>
+                 <input type="file" id="pdf-upload-input-landing" accept="application/pdf">
+            </div>
+            <p class="text-xs text-gray-400 mt-2">Taille maximale : 25MB</p>
+        </main>
+        <section class="bg-gray-50 py-16">
+            <div class="max-w-5xl mx-auto px-6">
+                <h3 class="text-3xl font-bold text-center mb-12">Comment ça marche ?</h3>
+                <div class="grid md:grid-cols-4 gap-8 text-center">
+                    <div class="feature-card">
+                        <div class="bg-blue-100 text-blue-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+                            <i class="fas fa-upload"></i>
+                        </div>
+                        <h4 class="text-lg font-semibold mb-2">Charger un PDF</h4>
+                        <p class="text-gray-600 text-sm">Chargez n'importe quel document PDF pour commencer à interagir.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="bg-blue-100 text-blue-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+                            <i class="fas fa-question-circle"></i>
+                        </div>
+                        <h4 class="text-lg font-semibold mb-2">Poser des Questions</h4>
+                        <p class="text-gray-600 text-sm">Posez des questions en langage naturel pour analyser vos documents.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="bg-blue-100 text-blue-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+                            <i class="fas fa-highlighter"></i>
+                        </div>
+                        <h4 class="text-lg font-semibold mb-2">Annoter et Surligner</h4>
+                        <p class="text-gray-600 text-sm">Utilisez le stylo, le surligneur et la gomme pour prendre des notes.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="bg-blue-100 text-blue-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+                            <i class="fas fa-search"></i>
+                        </div>
+                        <h4 class="text-lg font-semibold mb-2">Recherche Intelligente</h4>
+                        <p class="text-gray-600 text-sm">Trouvez les informations pertinentes grâce à la recherche assistée par IA.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <section id="faq" class="py-16">
+             <div class="max-w-3xl mx-auto px-6">
+                <h3 class="text-3xl font-bold text-center mb-12">Questions Fréquemment Posées</h3>
+                <div class="space-y-4">
+                    <details class="p-4 border rounded-lg">
+                        <summary class="font-semibold cursor-pointer">Puis-je utiliser cet outil gratuitement ?</summary>
+                        <p class="mt-2 text-gray-600">Oui, cet outil est entièrement gratuit et utilise la couche gratuite de l'API Gemini.</p>
+                    </details>
+                    <details class="p-4 border rounded-lg">
+                        <summary class="font-semibold cursor-pointer">Mes documents sont-ils en sécurité ?</summary>
+                        <p class="mt-2 text-gray-600">Oui, vos documents sont traités localement dans votre navigateur. Ils ne sont jamais sauvegardés sur nos serveurs.</p>
+                    </details>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- ===== Application Principale (Cachée par défaut) ===== -->
+    <div id="main-app" class="hidden h-screen max-h-screen bg-white">
+        <!-- Colonne de gauche : Visionneuse PDF -->
+        <div class="w-full md:w-1/2 lg:w-3/5 flex flex-col bg-white">
+            <!-- Barre d'outils supérieure -->
+            <div class="p-2 bg-white border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
+                <div class="flex items-center space-x-2">
+                     <label for="pdf-upload-input-main" class="cursor-pointer bg-blue-500 text-white px-3 py-1.5 rounded-md hover:bg-blue-600 transition font-semibold flex items-center gap-2 shadow-sm">
+                        <i class="fas fa-upload"></i> <span>Charger un autre</span>
+                    </label>
+                    <input type="file" id="pdf-upload-input-main" accept="application/pdf" class="hidden">
+                </div>
+                <!-- Barre de recherche -->
+                <form id="search-form" class="flex items-center gap-2">
+                    <input type="text" id="search-input" placeholder="Recherche intelligente..." class="bg-gray-100 rounded-full py-1.5 px-4 w-48 text-sm border border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <button type="submit" class="toolbar-btn"><i class="fas fa-search"></i></button>
+                    <span id="search-results-count" class="text-sm text-gray-500 w-16 text-center"></span>
+                    <button id="search-prev" type="button" class="toolbar-btn text-xs"><i class="fas fa-chevron-up"></i></button>
+                    <button id="search-next" type="button" class="toolbar-btn text-xs"><i class="fas fa-chevron-down"></i></button>
+                </form>
+                <!-- Contrôles d'édition et de navigation -->
+                <div id="viewer-controls" class="flex items-center gap-2 text-gray-600">
+                    <button id="undo-btn" class="toolbar-btn"><i class="fas fa-undo"></i></button>
+                    <button id="draw-btn" class="toolbar-btn"><i class="fas fa-pencil-alt"></i></button>
+                    <button id="eraser-btn" class="toolbar-btn"><i class="fas fa-eraser"></i></button>
+                    <input type="color" id="color-picker" value="#FF0000">
+                    <div class="h-6 border-l border-gray-300"></div>
+                    <button id="zoom-out-btn" class="toolbar-btn"><i class="fas fa-search-minus"></i></button>
+                    <button id="zoom-in-btn" class="toolbar-btn"><i class="fas fa-search-plus"></i></button>
+                    <button id="prev-page" class="toolbar-btn"><i class="fas fa-arrow-left"></i></button>
+                    <span id="page-num" class="text-sm font-medium px-2"></span>
+                    <button id="next-page" class="toolbar-btn"><i class="fas fa-arrow-right"></i></button>
+                </div>
+            </div>
+
+            <!-- Zone de contenu -->
+            <div id="content-area" class="flex-1 flex flex-col overflow-hidden bg-gray-100">
+                <div id="canvas-container">
+                    <div id="viewer-placeholder" class="m-auto text-center text-gray-400">
+                        <i class="far fa-file-pdf text-7xl mb-4"></i>
+                        <p>Aucun fichier sélectionné</p>
+                    </div>
+                    <canvas id="pdf-canvas"></canvas>
+                    <canvas id="highlight-canvas"></canvas>
+                    <canvas id="drawing-canvas"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Colonne de droite : Chat -->
+        <div class="w-full md:w-1/2 lg:w-2/5 flex flex-col border-l border-gray-200">
+            <div class="p-4 border-b border-gray-200 flex items-center justify-between">
+                <h2 class="text-xl font-bold text-gray-800">Chat PDF</h2>
+                <div class="flex items-center gap-2">
+                    <button class="px-4 py-1 text-sm font-semibold text-white bg-blue-500 rounded-full shadow">Prime</button>
+                    <button class="px-4 py-1 text-sm font-semibold text-gray-600 bg-gray-200 rounded-full">Standard</button>
+                </div>
+            </div>
+            <div id="chat-box" class="flex-1 p-6 overflow-y-auto bg-gray-50">
+                <div class="flex items-start gap-3 mb-6">
+                    <div class="bg-blue-500 text-white p-2 rounded-full flex-shrink-0 shadow">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                    <div class="bg-white p-4 rounded-lg shadow-sm max-w-sm border border-gray-100">
+                        <p class="text-sm">Bonjour ! Veuillez charger un fichier PDF pour commencer.</p>
+                    </div>
+                </div>
+            </div>
+            <div id="suggested-questions-container" class="p-4 bg-gray-50 border-t border-b border-gray-200 hidden">
+                 <h3 class="text-sm font-semibold mb-2 text-gray-600">Questions suggérées :</h3>
+                 <div id="suggested-questions" class="flex flex-wrap gap-2"></div>
+            </div>
+            <div class="p-4 bg-white border-t border-gray-200">
+                <form id="chat-form" class="flex items-center space-x-3">
+                    <input type="text" id="user-input" placeholder="Posez une question..." class="flex-1 p-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 transition" disabled>
+                    <button type="submit" id="send-button" class="bg-blue-500 text-white rounded-full w-12 h-12 flex items-center justify-center hover:bg-blue-600 transition disabled:bg-gray-300 shadow" disabled>
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const API_KEY = ""; 
+
+    // --- Éléments du DOM ---
+    const landingPage = document.getElementById('landing-page');
+    const mainApp = document.getElementById('main-app');
+    const dropZone = document.getElementById('drop-zone');
+    const pdfUploadInputLanding = document.getElementById('pdf-upload-input-landing');
+    
+    // --- Variables globales pour l'application principale ---
+    let pdfUploadInput, canvasContainer, pdfCanvas, highlightCanvas, drawingCanvas, viewerPlaceholder, prevPageBtn, nextPageBtn, pageNumSpan, zoomInBtn, zoomOutBtn, drawBtn, eraserBtn, undoBtn, colorPicker, searchForm, searchInput, searchResultsCount, searchPrevBtn, searchNextBtn, chatForm, userInput, sendButton, chatBox, suggestedQuestionsContainer, suggestedQuestionsDiv;
+
+    // --- État de l'application ---
+    let pdfDoc = null;
+    let pageNum = 1;
+    let scale = 1.5;
+    let annotations = {};
+    let isDrawing = false;
+    let currentTool = 'pen';
+    let currentColor = '#FF0000';
+    let currentPath = [];
+    let textLayer = {}; 
+    let searchResults = [];
+    let currentSearchIndex = -1;
+    let fullPdfText = '';
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';
+
+    // --- Logique de Navigation et Initialisation ---
+    function showMainApp() {
+        landingPage.style.display = 'none';
+        mainApp.style.display = 'flex';
+        initializeMainApp();
+    }
+
+    function initializeMainApp() {
+        // Attribuer les éléments du DOM aux variables globales
+        pdfUploadInput = document.getElementById('pdf-upload-input-main');
+        canvasContainer = document.getElementById('canvas-container');
+        pdfCanvas = document.getElementById('pdf-canvas');
+        highlightCanvas = document.getElementById('highlight-canvas');
+        drawingCanvas = document.getElementById('drawing-canvas');
+        viewerPlaceholder = document.getElementById('viewer-placeholder');
+        prevPageBtn = document.getElementById('prev-page');
+        nextPageBtn = document.getElementById('next-page');
+        pageNumSpan = document.getElementById('page-num');
+        zoomInBtn = document.getElementById('zoom-in-btn');
+        zoomOutBtn = document.getElementById('zoom-out-btn');
+        drawBtn = document.getElementById('draw-btn');
+        eraserBtn = document.getElementById('eraser-btn');
+        undoBtn = document.getElementById('undo-btn');
+        colorPicker = document.getElementById('color-picker');
+        searchForm = document.getElementById('search-form');
+        searchInput = document.getElementById('search-input');
+        searchResultsCount = document.getElementById('search-results-count');
+        searchPrevBtn = document.getElementById('search-prev');
+        searchNextBtn = document.getElementById('search-next');
+        chatForm = document.getElementById('chat-form');
+        userInput = document.getElementById('user-input');
+        sendButton = document.getElementById('send-button');
+        chatBox = document.getElementById('chat-box');
+        suggestedQuestionsContainer = document.getElementById('suggested-questions-container');
+        suggestedQuestionsDiv = document.getElementById('suggested-questions');
+
+        // Attacher les écouteurs d'événements
+        pdfUploadInput.addEventListener('change', (e) => handleFileSelect(e.target.files[0]));
+        prevPageBtn.addEventListener('click', onPrevPage);
+        nextPageBtn.addEventListener('click', onNextPage);
+        zoomInBtn.addEventListener('click', onZoomIn);
+        zoomOutBtn.addEventListener('click', onZoomOut);
+        drawBtn.addEventListener('click', () => selectTool('pen'));
+        eraserBtn.addEventListener('click', () => selectTool('eraser'));
+        undoBtn.addEventListener('click', undoLastAction);
+        colorPicker.addEventListener('input', selectColor);
+        searchForm.addEventListener('submit', handleSmartSearch);
+        searchNextBtn.addEventListener('click', () => navigateSearchResultsNav(1));
+        searchPrevBtn.addEventListener('click', () => navigateSearchResultsNav(-1));
+        chatForm.addEventListener('submit', handleChatSubmit);
+
+        drawingCanvas.addEventListener('mousedown', startDrawing);
+        drawingCanvas.addEventListener('mousemove', draw);
+        drawingCanvas.addEventListener('mouseup', stopDrawing);
+        drawingCanvas.addEventListener('mouseout', stopDrawing);
+        
+        drawingCanvas.addEventListener('touchstart', e => { e.preventDefault(); startDrawing(e); }, { passive: false });
+        drawingCanvas.addEventListener('touchmove', e => { e.preventDefault(); draw(e); }, { passive: false });
+        drawingCanvas.addEventListener('touchend', e => { e.preventDefault(); stopDrawing(); });
+
+        selectTool('pen');
+    }
+
+    // --- Fonctions de rendu PDF ---
+    async function renderPage(num, highlightRect = null) {
+        if (!pdfDoc) return;
+        try {
+            const page = await pdfDoc.getPage(num);
+            const viewport = page.getViewport({ scale: scale });
+
+            [pdfCanvas, highlightCanvas, drawingCanvas].forEach(canvas => {
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+            });
+
+            await page.render({ canvasContext: pdfCanvas.getContext('2d'), viewport }).promise;
+            pageNumSpan.textContent = `Page ${num} / ${pdfDoc.numPages}`;
+            
+            if (!textLayer[num]) {
+                const textContent = await page.getTextContent();
+                textLayer[num] = textContent.items.map(item => {
+                    const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+                    return {
+                        text: item.str,
+                        height: item.height * scale,
+                        width: item.width * scale,
+                        left: tx[4],
+                        top: tx[5] - (item.height * scale),
+                    };
+                });
+            }
+            
+            redrawAnnotations(num);
+            if (highlightRect) {
+                highlightSingleRect(highlightRect, true);
+            }
+        } catch (error) {
+            console.error(`Erreur lors du rendu de la page ${num}:`, error);
+        }
+    }
+
+    // --- Fonctions de dessin et d'annotation ---
+    function startDrawing(e) {
+        isDrawing = true;
+        const { offsetX, offsetY } = getCanvasCoords(e);
+        currentPath = [{ x: offsetX, y: offsetY }];
+    }
+
+    function draw(e) {
+        if (!isDrawing) return;
+        const { offsetX, offsetY } = getCanvasCoords(e);
+        const ctx = drawingCanvas.getContext('2d');
+        
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        if (currentTool === 'pen') {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.strokeStyle = currentColor;
+            ctx.lineWidth = 2;
+        } else if (currentTool === 'eraser') {
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.lineWidth = 20;
+        }
+
+        const lastPoint = currentPath[currentPath.length - 1];
+        ctx.beginPath();
+        ctx.moveTo(lastPoint.x, lastPoint.y);
+        ctx.lineTo(offsetX, offsetY);
+        ctx.stroke();
+        
+        currentPath.push({ x: offsetX, y: offsetY });
+    }
+
+    function stopDrawing() {
+        if (!isDrawing) return;
+        isDrawing = false;
+        if (!annotations[pageNum]) {
+            annotations[pageNum] = [];
+        }
+        annotations[pageNum].push({
+            tool: currentTool,
+            color: currentColor,
+            width: currentTool === 'pen' ? 2 : 20,
+            path: currentPath
+        });
+        currentPath = [];
+    }
+    
+    function redrawAnnotations(pageNumber) {
+        const ctx = drawingCanvas.getContext('2d');
+        ctx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+        const pageAnnotations = annotations[pageNumber] || [];
+        
+        pageAnnotations.forEach(annotation => {
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            
+            if (annotation.tool === 'pen') {
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.strokeStyle = annotation.color;
+                ctx.lineWidth = annotation.width;
+            } else if (annotation.tool === 'eraser') {
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.lineWidth = annotation.width;
+            }
+
+            ctx.beginPath();
+            if(annotation.path.length > 0){
+                ctx.moveTo(annotation.path[0].x, annotation.path[0].y);
+                annotation.path.forEach(point => ctx.lineTo(point.x, point.y));
+                ctx.stroke();
+            }
+        });
+        ctx.globalCompositeOperation = 'source-over';
+    }
+
+    function getCanvasCoords(e) {
+        const rect = drawingCanvas.getBoundingClientRect();
+        const touch = e.touches ? e.touches[0] : e;
+        return { 
+            offsetX: touch.clientX - rect.left, 
+            offsetY: touch.clientY - rect.top 
+        };
+    }
+
+    // --- Contrôles de la visionneuse ---
+    function onPrevPage() { if (pageNum <= 1) return; pageNum--; renderPage(pageNum); }
+    function onNextPage() { if (pageNum >= pdfDoc.numPages) return; pageNum++; renderPage(pageNum); }
+    function onZoomIn() { scale += 0.2; renderPage(pageNum); }
+    function onZoomOut() { if (scale <= 0.4) return; scale -= 0.2; renderPage(pageNum); }
+
+    function selectTool(tool) {
+        currentTool = tool;
+        drawBtn.classList.toggle('active', tool === 'pen');
+        eraserBtn.classList.toggle('active', tool === 'eraser');
+        drawingCanvas.style.cursor = tool === 'pen' ? 'crosshair' : 'cell';
+    }
+
+    function selectColor(e) {
+        currentColor = e.target.value;
+        selectTool('pen');
+    }
+    
+    function undoLastAction() {
+        if (annotations[pageNum] && annotations[pageNum].length > 0) {
+            annotations[pageNum].pop();
+            redrawAnnotations(pageNum);
+        }
+    }
+
+    // --- Fonctions de Recherche Intelligente ---
+    async function handleSmartSearch(e) {
+        e.preventDefault();
+        const query = searchInput.value;
+        if (!query || !fullPdfText) return;
+
+        searchResultsCount.innerHTML = '<div class="loader !w-4 !h-4"></div>';
+        
+        const prompt = `À partir du texte suivant, trouve et renvoie jusqu'à 5 citations EXACTES qui sont les plus pertinentes pour la requête de recherche : "${query}". Ne modifie pas les citations. Retourne chaque citation sur une nouvelle ligne, séparée par '|||'.\n\n--- TEXTE ---\n${fullPdfText.substring(0, 8000)}\n--- FIN DU TEXTE ---`;
+
+        try {
+            const resultText = await callGeminiAPI(prompt);
+            const snippets = resultText.split('|||').map(s => s.trim()).filter(s => s.length > 5);
+            
+            searchResults = [];
+            
+            let pagePromises = [];
+            for (let i = 1; i <= pdfDoc.numPages; i++) {
+                pagePromises.push(
+                    pdfDoc.getPage(i).then(async (page) => {
+                        const content = await page.getTextContent();
+                        return { pageIndex: i, content: content };
+                    })
+                );
+            }
+
+            const allPageContents = await Promise.all(pagePromises);
+
+            for (const snippet of snippets) {
+                if (searchResults.some(res => res.snippet === snippet)) continue;
+
+                for (const { pageIndex, content } of allPageContents) {
+                    if (content && content.items) {
+                        const pageText = content.items.map(it => it.str).join('');
+                        if (pageText.includes(snippet)) {
+                            searchResults.push({ page: pageIndex, snippet: snippet });
+                            break; 
+                        }
+                    }
+                }
+            }
+            
+            currentSearchIndex = 0;
+            if (searchResults.length > 0) {
+                navigateToSearchResult(currentSearchIndex);
+            } else {
+                searchResultsCount.textContent = "0 résultats";
+                highlightCanvas.getContext('2d').clearRect(0,0,highlightCanvas.width, highlightCanvas.height);
+            }
+
+        } catch (error) {
+            console.error("Erreur de recherche intelligente:", error);
+            searchResultsCount.textContent = "Erreur";
+        }
+    }
+
+    async function navigateToSearchResult(index) {
+        if (index < 0 || index >= searchResults.length) return;
+        
+        const result = searchResults[index];
+        if (pageNum !== result.page) {
+            pageNum = result.page;
+            await renderPage(pageNum);
+        }
+        
+        const pageTextContent = await pdfDoc.getPage(result.page).then(p => p.getTextContent());
+        const pageText = pageTextContent.items.map(it => it.str).join('');
+        const snippetIndex = pageText.indexOf(result.snippet);
+
+        if (snippetIndex > -1) {
+            let charCount = 0;
+            let startItem = null;
+            let endItem = null;
+
+            for (const item of pageTextContent.items) {
+                const currentItemStart = charCount;
+                const currentItemEnd = charCount + item.str.length;
+                if (!startItem && currentItemEnd > snippetIndex) {
+                    startItem = item;
+                }
+                if (currentItemEnd >= snippetIndex + result.snippet.length) {
+                    endItem = item;
+                    break;
+                }
+                charCount = currentItemEnd;
+            }
+
+            if (startItem) {
+                const viewport = await pdfDoc.getPage(result.page).then(p => p.getViewport({ scale: scale }));
+                const startTx = pdfjsLib.Util.transform(viewport.transform, startItem.transform);
+                const endTx = pdfjsLib.Util.transform(viewport.transform, (endItem || startItem).transform);
+
+                const rect = {
+                    left: startTx[4],
+                    top: startTx[5] - (startItem.height * scale),
+                    width: (endTx[4] + ((endItem || startItem).width * scale)) - startTx[4],
+                    height: startItem.height * scale
+                };
+                highlightSingleRect(rect, true);
+            }
+        }
+        searchResultsCount.textContent = `${index + 1} / ${searchResults.length}`;
+    }
+
+    function highlightSingleRect(rect, isCurrent) {
+        const ctx = highlightCanvas.getContext('2d');
+        ctx.clearRect(0, 0, highlightCanvas.width, highlightCanvas.height);
+        ctx.fillStyle = 'rgba(255, 255, 0, 0.4)';
+        ctx.fillRect(rect.left, rect.top, rect.width, rect.height);
+        if (isCurrent) {
+            ctx.strokeStyle = 'orange';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(rect.left, rect.top, rect.width, rect.height);
+        }
+    }
+    
+    function navigateSearchResultsNav(direction) {
+        if (searchResults.length === 0) return;
+        currentSearchIndex += direction;
+        if (currentSearchIndex < 0) currentSearchIndex = searchResults.length - 1;
+        if (currentSearchIndex >= searchResults.length) currentSearchIndex = 0;
+        navigateToSearchResult(currentSearchIndex);
+    }
+
+    // --- Logique de l'application ---
+    async function handleFileSelect(file) {
+        if (!file || file.type !== 'application/pdf') return;
+        
+        showMainApp();
+        viewerPlaceholder.classList.add('hidden');
+        addMessageToChat("Chargement du document...", 'system');
+        
+        const fileReader = new FileReader();
+        fileReader.onload = async (event) => {
+            try {
+                const loadingTask = pdfjsLib.getDocument({ data: event.target.result });
+                pdfDoc = await loadingTask.promise;
+                pageNum = 1;
+                annotations = {};
+                textLayer = {};
+                fullPdfText = ''; // Réinitialiser le texte
+                await renderPage(pageNum);
+                await extractFullText();
+            } catch (error) {
+                console.error('Erreur de chargement du PDF :', error);
+                addMessageToChat("Une erreur est survenue lors du chargement du fichier.", 'system');
+            }
+        };
+        fileReader.readAsArrayBuffer(file);
+    }
+    
+    // --- Fonctions de Chat ---
+    const addMessageToChat = (text, sender) => {
+        if(!chatBox) return;
+        const messageWrapper = document.createElement('div');
+        const sanitizedText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+        if (sender === 'user') {
+            messageWrapper.className = 'flex items-start gap-3 mb-4 justify-end';
+            messageWrapper.innerHTML = `<div class="bg-blue-500 text-white p-3 rounded-xl max-w-md shadow"><p class="text-sm">${sanitizedText}</p></div><div class="bg-gray-200 text-gray-600 p-2 rounded-full flex-shrink-0 w-8 h-8 flex items-center justify-center"><i class="fas fa-user"></i></div>`;
+        } else if (sender === 'ai') {
+            messageWrapper.className = 'flex items-start gap-3 mb-4';
+            messageWrapper.innerHTML = `<div class="bg-blue-500 text-white p-2 rounded-full flex-shrink-0 w-8 h-8 flex items-center justify-center shadow"><i class="fas fa-robot"></i></div><div class="bg-white p-3 rounded-xl max-w-md shadow-sm border border-gray-100"><p class="text-sm">${sanitizedText.replace(/\n/g, '<br>')}</p></div>`;
+        } else {
+             messageWrapper.className = 'text-center my-4';
+             messageWrapper.innerHTML = `<span class="text-xs text-gray-500 px-3 py-1 bg-gray-200 rounded-full">${sanitizedText}</span>`;
+        }
+        chatBox.appendChild(messageWrapper);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    };
+    
+    const addLoaderToChat = () => {
+        const loaderId = 'loading-indicator';
+        if (document.getElementById(loaderId)) return;
+        const loaderWrapper = document.createElement('div');
+        loaderWrapper.id = loaderId;
+        loaderWrapper.className = 'flex items-start gap-3 mb-4';
+        loaderWrapper.innerHTML = `<div class="bg-blue-500 text-white p-2 rounded-full flex-shrink-0 w-8 h-8 flex items-center justify-center shadow"><i class="fas fa-robot"></i></div><div class="bg-white p-3 rounded-xl max-w-md flex items-center shadow-sm border border-gray-100"><div class="loader"></div><p class="text-sm ml-3">Réflexion...</p></div>`;
+        chatBox.appendChild(loaderWrapper);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    };
+
+    const removeLoaderFromChat = () => {
+        const loader = document.getElementById('loading-indicator');
+        if (loader) loader.remove();
+    };
+    
+    const callGeminiAPI = async (prompt) => {
+        const response = await fetch('/api/gemini', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: prompt }) 
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error.message || `Erreur du serveur: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        if (data.candidates && data.candidates.length > 0 && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts.length > 0) {
+            return data.candidates[0].content.parts[0].text;
+        }
+        return "Aucune réponse reçue.";
+    };
+    
+    const generateSuggestedQuestions = async () => {
+        const prompt = `En te basant sur le début du texte suivant d'un document, génère 3 questions courtes et intéressantes qu'un utilisateur pourrait poser. Retourne uniquement les questions, séparées par un point-virgule (;). N'ajoute aucun autre texte. Exemple: Quel est l'objectif principal ?; Qui sont les auteurs ?; Quels sont les résultats les plus importants ?\n\n--- Début du texte ---\n${fullPdfText.substring(0, 2000)}\n--- Fin du texte ---`;
+        try {
+            const result = await callGeminiAPI(prompt);
+            const questions = result.split(';').map(q => q.trim()).filter(q => q);
+            suggestedQuestionsDiv.innerHTML = '';
+            questions.forEach(q => {
+                const button = document.createElement('button');
+                button.className = 'bg-gray-200 text-gray-700 text-sm px-3 py-1 rounded-full hover:bg-gray-300 transition';
+                button.textContent = q;
+                button.onclick = () => {
+                    userInput.value = q;
+                    handleChatSubmit(new Event('submit'));
+                };
+                suggestedQuestionsDiv.appendChild(button);
+            });
+            suggestedQuestionsContainer.classList.remove('hidden');
+        } catch (error) {
+            console.error("Erreur lors de la génération des questions suggérées :", error);
+        }
+    };
+
+    const queryGemini = async (question) => {
+        addLoaderToChat();
+        const prompt = `En te basant sur le texte suivant d'un document PDF, réponds à la question suivante. Agis comme un assistant expert du contenu de ce document. Fournis des réponses claires, détaillées et directes. Si la réponse n'est pas disponible dans le texte, indique clairement "L'information demandée n'est pas disponible dans le document fourni". N'invente pas d'informations.\n\n--- Texte du document ---\n${fullPdfText.substring(0, 30000)}\n--- Fin du texte du document ---\n\nQuestion: "${question}"\nRéponse:`;
+        try {
+            const aiResponse = await callGeminiAPI(prompt);
+            removeLoaderFromChat();
+            addMessageToChat(aiResponse, 'ai');
+        } catch (error) {
+            console.error("Erreur lors de la requête à Gemini :", error);
+            removeLoaderFromChat();
+            addMessageToChat(`Une erreur est survenue : ${error.message}`, 'system');
+        }
+    };
+    
+    const extractFullText = async () => {
+        fullPdfText = '';
+        addMessageToChat("Extraction du texte...", 'system');
+        for (let i = 1; i <= pdfDoc.numPages; i++) {
+            const page = await pdfDoc.getPage(i);
+            const textContent = await page.getTextContent();
+            fullPdfText += textContent.items.map(item => item.str).join(' ') + '\n\n';
+        }
+        addMessageToChat("Extraction terminée ! Vous pouvez maintenant poser vos questions.", 'system');
+        userInput.disabled = false;
+        sendButton.disabled = false;
+        userInput.placeholder = "Posez une question sur le document...";
+        generateSuggestedQuestions();
+    };
+    
+    const handleChatSubmit = e => {
+        e.preventDefault();
+        const question = userInput.value.trim();
+        if (!question) return;
+        addMessageToChat(question, 'user');
+        userInput.value = '';
+        queryGemini(question);
+    };
+
+    // --- Écouteurs d'événements de la page d'accueil ---
+    pdfUploadInputLanding.addEventListener('change', (e) => handleFileSelect(e.target.files[0]));
+    
+    function handleDrop(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove('dragover');
+        const file = e.dataTransfer.files[0];
+        handleFileSelect(file);
+    }
+
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.add('dragover');
+    });
+    dropZone.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove('dragover');
+    });
+    dropZone.addEventListener('drop', handleDrop);
+
+</script>
+
+</body>
+</html>
