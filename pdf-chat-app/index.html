@@ -546,6 +546,7 @@
             await renderPage(pageNum);
         }
         
+        
         const pageTextContent = await pdfDoc.getPage(result.page).then(p => p.getTextContent());
         const pageText = pageTextContent.items.map(it => it.str).join('');
         const snippetIndex = pageText.indexOf(result.snippet);
