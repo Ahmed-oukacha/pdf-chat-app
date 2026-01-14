@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Discuter avec un PDF via Gemini</title>
+    <title>Discuter avec un PDF via GPT</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -148,7 +148,7 @@
                 <div class="space-y-4">
                     <details class="p-4 border rounded-lg">
                         <summary class="font-semibold cursor-pointer">Puis-je utiliser cet outil gratuitement ?</summary>
-                        <p class="mt-2 text-gray-600">Oui, cet outil est entièrement gratuit et utilise la couche gratuite de l'API Gemini.</p>
+                        <p class="mt-2 text-gray-600">Oui, cet outil utilise l'API OpenAI GPT pour les réponses intelligentes.</p>
                     </details>
                     <details class="p-4 border rounded-lg">
                         <summary class="font-semibold cursor-pointer">Mes documents sont-ils en sécurité ?</summary>
@@ -681,8 +681,8 @@
         }
         
         const data = await response.json();
-        if (data.candidates && data.candidates.length > 0 && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts.length > 0) {
-            return data.candidates[0].content.parts[0].text;
+        if (data.choices && data.choices.length > 0 && data.choices[0].message && data.choices[0].message.content) {
+            return data.choices[0].message.content;
         }
         return "Aucune réponse reçue.";
     };
@@ -717,7 +717,7 @@
             removeLoaderFromChat();
             addMessageToChat(aiResponse, 'ai');
         } catch (error) {
-            console.error("Erreur lors de la requête à Gemini :", error);
+            console.error("Erreur lors de la requête à GPT :", error);
             removeLoaderFromChat();
             addMessageToChat(`Une erreur est survenue : ${error.message}`, 'system');
         }
